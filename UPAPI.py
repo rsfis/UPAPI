@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from datetime import datetime
 from dateutil import parser
 from slugify import slugify
@@ -7,14 +7,36 @@ import hashlib, uuid, re, pytz, qrcode, base64, io, math, random
 from pydantic import BaseModel
 import barcode
 from barcode.writer import ImageWriter
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.extension import _rate_limit_exceeded_handler
 
 # python -m uvicorn UPAPI:app --reload
 
 app = FastAPI(title="UPAPI")
 fake = Faker()
 
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+app.add_middleware(SlowAPIMiddleware)
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.middleware("http")
+async def limit_body(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+
+    if content_length and int(content_length) > 1024 * 1024:
+        raise HTTPException(413, "Payload too big")
+
+    return await call_next(request)
+
 @app.get("/hash")
-def generate_hash(algo: str = "sha256", text: str=""):
+@limiter.limit("5/minute")
+def generate_hash(request: Request, algo: str = "sha256", text: str=""):
     try:
         h = hashlib.new(algo)
         h.update(text.encode())
@@ -23,56 +45,70 @@ def generate_hash(algo: str = "sha256", text: str=""):
         raise HTTPException(400, "Invalid hash algorithm")
 
 @app.get("/uuid")
-def generate_uuid():
+@limiter.limit("5/minute")
+def generate_uuid(request: Request, ):
     return {"uuid": str(uuid.uuid4())}
 
 @app.get("/text/upper")
-def text_upper(text: str):
+@limiter.limit("5/minute")
+def text_upper(request: Request, text: str):
     return {"text": str(text.upper())}
 
 @app.get("/text/lower")
-def text_lower(text: str):
+@limiter.limit("5/minute")
+def text_lower(request: Request, text: str):
     return {"text": str(text.lower())}
 
 @app.get("/text/count")
-def text_count(text: str):
-    return {"text": str(text.count())}
+@limiter.limit("5/minute")
+def text_count(request: Request, text: str):
+    return {"text": len(text)}
 
 @app.get("/date/now")
-def date_now(timezone: str = "UTC"):
+@limiter.limit("5/minute")
+def date_now(request: Request, timezone: str = "UTC"):
     timez = pytz.timezone(timezone)
     return {"date": str(datetime.now(timez).isoformat())}
 
 @app.get("/date/difference")
-def date_difference(date1: str, date2: str):
+@limiter.limit("5/minute")
+def date_difference(request: Request, date1: str, date2: str):
     a = parser.parse(date1)
     b = parser.parse(date2)
 
     return {"seconds": abs((b - a).total_seconds())}
 
 @app.get("/math/ruleof3")
-def ruleof3(a: float, b: float, c: float):
+@limiter.limit("5/minute")
+def ruleof3(request: Request, a: float, b: float, c: float):
     return {"result": (b*c) / a}
 
 @app.get("/math/randint")
-def randominteger(minimum: int, maximum: int):
+@limiter.limit("5/minute")
+def randominteger(request: Request, minimum: int, maximum: int):
+    if minimum > maximum:
+        raise HTTPException(400, "minimum cannot be greater than maximum")
     return {"result": random.randint(minimum, maximum)}
 
 @app.get("/fakeuser")
-def fakeuser():
+@limiter.limit("5/minute")
+def fakeuser(request: Request, ):
     return {"username": fake.user_name(), "name": fake.name(), "birthday": fake.date_of_birth(), "address": fake.address(), "email": fake.email()}
 
 @app.get("/fakecreditcard")
-def fakecreditcard():
+@limiter.limit("5/minute")
+def fakecreditcard(request: Request, ):
     return {"name": fake.name(), "number": fake.credit_card_number(), "provider": fake.credit_card_provider(), "expiredate": fake.credit_card_expire(), "code": fake.credit_card_security_code()}
 
 @app.get("/generatepassword")
-def genpassword():
+@limiter.limit("5/minute")
+def genpassword(request: Request, ):
     password = fake.password()
     return {"password": password}
 
 @app.get("/qrcode")
-def qr(text: str):
+@limiter.limit("5/minute")
+def qr(request: Request, text: str):
     img = qrcode.make(text)
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
@@ -81,9 +117,10 @@ def qr(text: str):
 
 class Barcode(BaseModel):
     text: str
-
+    
 @app.post("/barcode")
-def genbarcode(data: Barcode):
+@limiter.limit("5/minute")
+def genbarcode(request: Request, data: Barcode):
     buffer = io.BytesIO()
     code128 = barcode.get("code128", data.text, writer=ImageWriter())
     code128.write(buffer)
@@ -92,7 +129,8 @@ def genbarcode(data: Barcode):
     return {"image": base64_img}
 
 @app.get("/geodist")
-def geodist(lat1:float, lon1:float, lat2:float, lon2:float):
+@limiter.limit("5/minute")
+def geodist(request: Request, lat1:float, lon1:float, lat2:float, lon2:float):
     R = 6371
     dlat = math.radians(lat2-lat1)
     dlon = math.radians(lon2-lon1)
@@ -106,7 +144,8 @@ class Encript(BaseModel):
     text: str
 
 @app.post("/encript")
-def encript_data(encripted: Encript):
+@limiter.limit("5/minute")
+def encript_data(request: Request, encripted: Encript):
     text_bytes = encripted.text.encode("utf-8")
     key_bytes = encripted.key.encode("utf-8")
 
@@ -118,7 +157,8 @@ def encript_data(encripted: Encript):
     return base64.urlsafe_b64encode(result).decode("utf-8")
 
 @app.post("/decript")
-def decript_data(decript: Encript):
+@limiter.limit("5/minute")
+def decript_data(request: Request, decript: Encript):
     data = base64.urlsafe_b64decode(decript.text)
     key_bytes = decript.key.encode("utf-8")
 
