@@ -9,3 +9,4 @@ barcode
 slowapi
 pydantic
 setuptools
+python-multipart
