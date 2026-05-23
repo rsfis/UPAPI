@@ -4,6 +4,9 @@ from dateutil import parser
 from slugify import slugify
 from faker import Faker
 import hashlib, uuid, re, pytz, qrcode, base64, io, math, random
+from pydantic import BaseModel
+import barcode
+from barcode.writer import ImageWriter
 
 # python -m uvicorn UPAPI:app --reload
 
@@ -63,12 +66,29 @@ def fakeuser():
 def fakecreditcard():
     return {"name": fake.name(), "number": fake.credit_card_number(), "provider": fake.credit_card_provider(), "expiredate": fake.credit_card_expire(), "code": fake.credit_card_security_code()}
 
+@app.get("/generatepassword")
+def genpassword():
+    password = fake.password()
+    return {"password": password}
+
 @app.get("/qrcode")
 def qr(text: str):
     img = qrcode.make(text)
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     base64_img = base64.b64encode(buffer.getvalue()).decode()
+    return {"image": base64_img}
+
+class Barcode(BaseModel):
+    text: str
+
+@app.post("/barcode")
+def genbarcode(data: Barcode):
+    buffer = io.BytesIO()
+    code128 = barcode.get("code128", data.text, writer=ImageWriter())
+    code128.write(buffer)
+    base64_img = base64.b64encode(buffer.getvalue()).decode()
+
     return {"image": base64_img}
 
 @app.get("/geodist")
@@ -79,3 +99,32 @@ def geodist(lat1:float, lon1:float, lat2:float, lon2:float):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2 #haversine
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) # Transforma aquele valor angular na distância sobre a esfera.
     return {"km": R * c} # Multiplica a distancia pelo raio
+
+# Encripting
+class Encript(BaseModel):
+    key: str
+    text: str
+
+@app.post("/encript")
+def encript_data(encripted: Encript):
+    text_bytes = encripted.text.encode("utf-8")
+    key_bytes = encripted.key.encode("utf-8")
+
+    result = bytearray()
+
+    for i in range(len(text_bytes)):
+        result.append(text_bytes[i] ^ key_bytes[i % len(key_bytes)])
+
+    return base64.urlsafe_b64encode(result).decode("utf-8")
+
+@app.post("/decript")
+def decript_data(decript: Encript):
+    data = base64.urlsafe_b64decode(decript.text)
+    key_bytes = decript.key.encode("utf-8")
+
+    result = bytearray()
+
+    for i in range(len(data)):
+        result.append(data[i] ^ key_bytes[i % len(key_bytes)])
+
+    return result.decode("utf-8")
