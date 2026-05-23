@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+python-dateutil
+python-slugify
+faker
+pytz
+qrcode[pil]
