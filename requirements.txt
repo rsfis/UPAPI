@@ -5,7 +5,7 @@ python-slugify
 faker
 pytz
 qrcode[pil]
-barcode
+python-barcode
 slowapi
 pydantic
 setuptools
