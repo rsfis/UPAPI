@@ -5,3 +5,8 @@ python-slugify
 faker
 pytz
 qrcode[pil]
+python-barcode
+slowapi
+pydantic
+setuptools
+python-multipart
