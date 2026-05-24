@@ -135,7 +135,7 @@ def geodist(request: Request, lat1:float, lon1:float, lat2:float, lon2:float):
     dlat = math.radians(lat2-lat1)
     dlon = math.radians(lon2-lon1)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2 #haversine
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) # Transforma aquele valor angular na distância sobre a esfera.
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) # Transforma aquele valor angular na distancia sobre a esfera.
     return {"km": R * c} # Multiplica a distancia pelo raio
 
 # Encripting
